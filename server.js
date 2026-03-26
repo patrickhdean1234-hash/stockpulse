@@ -3,15 +3,29 @@ const cors = require("cors");
 const Stripe = require("stripe");
 const admin = require("firebase-admin");
 
-const serviceAccount = require("./serviceAccountKey.json");
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
+const PRICE_ID = process.env.PRICE_ID;
+const FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 
-// === REPLACE THESE ===
-const STRIPE_SECRET_KEY = "YOUR_STRIPE_SECRET_KEY";
-const STRIPE_WEBHOOK_SECRET = "YOUR_STRIPE_WEBHOOK_SECRET";
-const PRICE_ID = "YOUR_PRICE_ID";
-// =====================
+if (!STRIPE_SECRET_KEY) {
+  throw new Error("Missing STRIPE_SECRET_KEY");
+}
+if (!PRICE_ID) {
+  throw new Error("Missing PRICE_ID");
+}
+if (!FIREBASE_SERVICE_ACCOUNT_JSON) {
+  throw new Error("Missing FIREBASE_SERVICE_ACCOUNT_JSON");
+}
 
 const stripe = new Stripe(STRIPE_SECRET_KEY);
+
+let serviceAccount;
+try {
+  serviceAccount = JSON.parse(FIREBASE_SERVICE_ACCOUNT_JSON);
+} catch (err) {
+  throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON");
+}
 
 if (!admin.apps.length) {
   admin.initializeApp({
@@ -24,7 +38,6 @@ const app = express();
 
 app.use(cors());
 
-// Stripe webhook MUST use raw body
 app.post(
   "/stripe-webhook",
   express.raw({ type: "application/json" }),
@@ -67,10 +80,11 @@ app.post(
         case "customer.subscription.updated":
         case "customer.subscription.created": {
           const subscription = event.data.object;
-
           const status = subscription.status;
           const isPremium =
-            status === "active" || status === "trialing" || status === "past_due";
+            status === "active" ||
+            status === "trialing" ||
+            status === "past_due";
 
           const snapshot = await db
             .collection("premiumUsers")
@@ -129,7 +143,6 @@ app.post(
   }
 );
 
-// Normal JSON routes below webhook
 app.use(express.json());
 
 app.get("/", (req, res) => {
@@ -185,6 +198,8 @@ app.get("/premium-status/:userId", async (req, res) => {
   }
 });
 
-app.listen(3000, "0.0.0.0", () => {
-  console.log("Server running on http://0.0.0.0:3000");
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server running on port ${PORT}`);
 });
